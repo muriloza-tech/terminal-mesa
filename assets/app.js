@@ -1,564 +1,482 @@
-/* Terminal Mesa — front-end estático.
-   Regra number one deste arquivo: nunca inventar preço.
-   Fonte que falha vira cartão cinza com "sem fonte", nunca um número plausível. */
+/* Terminal Mesa v2 — tudo desenhado a partir de data/dados.json.
+   Regra: nada é estimado aqui. O que não veio no dado não aparece na tela. */
 
 (function () {
   "use strict";
 
-  var LS = "tmesa:";
+  var LS = "tmesa2:";
+  var D = null, ativoSel = "win", tfSel = "min60";
 
-  function get(k, d) {
-    try { var v = localStorage.getItem(LS + k); return v === null ? d : v; }
-    catch (e) { return d; }
-  }
-  function set(k, v) {
-    try { localStorage.setItem(LS + k, v); } catch (e) { /* modo privado */ }
-  }
-  function $(s, r) { return (r || document).querySelector(s); }
-  function el(tag, cls, txt) {
-    var n = document.createElement(tag);
-    if (cls) n.className = cls;
-    if (txt !== undefined) n.textContent = txt;
-    return n;
+  function get(k, d) { try { var v = localStorage.getItem(LS + k); return v === null ? d : v; } catch (e) { return d; } }
+  function set(k, v) { try { localStorage.setItem(LS + k, v); } catch (e) {} }
+  function $(s) { return document.querySelector(s); }
+  function el(t, c, x) { var n = document.createElement(t); if (c) n.className = c; if (x !== undefined) n.textContent = x; return n; }
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  function fmt(v, casas) {
+    if (v === null || v === undefined || isNaN(v)) return "—";
+    return Number(v).toLocaleString("pt-BR", { minimumFractionDigits: casas || 0, maximumFractionDigits: casas || 0 });
   }
 
-  /* ---------------- tema ---------------- */
+  /* ---------- tema ---------- */
 
-  function applyTheme(t) {
+  function tema(t) {
     if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
     else document.documentElement.removeAttribute("data-theme");
   }
-  applyTheme(get("theme", "auto"));
-
-  $("#btn-theme").addEventListener("click", function () {
-    var order = ["auto", "light", "dark"];
-    var next = order[(order.indexOf(get("theme", "auto")) + 1) % 3];
-    set("theme", next);
-    applyTheme(next);
-    this.title = "Tema: " + next;
+  tema(get("tema", "auto"));
+  $("#btn-tema").addEventListener("click", function () {
+    var o = ["auto", "light", "dark"], n = o[(o.indexOf(get("tema", "auto")) + 1) % 3];
+    set("tema", n); tema(n); this.title = "Tema: " + n;
   });
 
-  /* ---------------- relógio ---------------- */
+  /* ---------- guia ---------- */
 
-  function fmtHora(d) {
-    return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  }
-  function tick() {
-    var d = new Date();
-    $("#clock").textContent = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + "  " + fmtHora(d);
-  }
-  tick();
-  setInterval(tick, 20000);
+  var guia = $("#guia");
+  if (get("guia_visto", "") !== "1") guia.hidden = false;
+  $("#btn-guia").addEventListener("click", function () { guia.hidden = !guia.hidden; });
+  $("#guia-ok").addEventListener("click", function () { guia.hidden = true; set("guia_visto", "1"); });
 
-  /* ---------------- abas ---------------- */
+  /* ---------- markdown mínimo (folha) ---------- */
 
-  var tabs = document.querySelectorAll(".tab");
-  Array.prototype.forEach.call(tabs, function (t) {
-    t.addEventListener("click", function () {
-      Array.prototype.forEach.call(tabs, function (o) {
-        var on = o === t;
-        o.setAttribute("aria-selected", on ? "true" : "false");
-        $("#panel-" + o.dataset.tab).hidden = !on;
-      });
-      set("tab", t.dataset.tab);
-    });
-  });
-  (function () {
-    var saved = get("tab", "folha");
-    var t = document.querySelector('.tab[data-tab="' + saved + '"]');
-    if (t) t.click();
-  })();
-
-  /* ---------------- ajustes ---------------- */
-
-  var settings = $("#settings"), btnSettings = $("#btn-settings");
-  btnSettings.addEventListener("click", function () {
-    var open = settings.hidden;
-    settings.hidden = !open;
-    btnSettings.setAttribute("aria-expanded", open ? "true" : "false");
-  });
-
-  var inToken = $("#in-token"), inInterval = $("#in-interval"), inWin = $("#in-win"), inWdo = $("#in-wdo");
-  inToken.value = get("brapi", "");
-  inInterval.value = get("interval", "60");
-  inWin.value = get("win", "");
-  inWdo.value = get("wdo", "");
-
-  inToken.addEventListener("change", function () { set("brapi", this.value.trim()); carregarPrecos(); });
-  inInterval.addEventListener("change", function () { set("interval", this.value); agendar(); });
-  inWin.addEventListener("input", function () { set("win", this.value.trim()); renderManuais(); });
-  inWdo.addEventListener("input", function () { set("wdo", this.value.trim()); renderManuais(); });
-
-  /* ---------------- markdown mínimo ---------------- */
-
-  function esc(s) {
-    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
   function inline(s) {
     return esc(s)
       .replace(/`([^`]+)`/g, "<code>$1</code>")
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
-      .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+      .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
   }
-  function linhaTabela(l) {
-    var c = l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|");
-    return c.map(function (x) { return x.trim(); });
-  }
+  function cels(l) { return l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(function (x) { return x.trim(); }); }
   function md(src) {
-    var linhas = String(src).replace(/\r\n/g, "\n").split("\n");
-    var out = [], i = 0;
-
-    function flushLista(tag, itens) {
-      out.push("<" + tag + ">" + itens.map(function (t) { return "<li>" + inline(t) + "</li>"; }).join("") + "</" + tag + ">");
-    }
-
-    while (i < linhas.length) {
-      var l = linhas[i];
-
+    var L = String(src).replace(/\r\n/g, "\n").split("\n"), out = [], i = 0;
+    while (i < L.length) {
+      var l = L[i];
       if (/^\s*$/.test(l)) { i++; continue; }
-
       if (/^---+\s*$/.test(l)) { out.push("<hr>"); i++; continue; }
-
       var h = l.match(/^(#{1,4})\s+(.*)$/);
-      if (h) { var n = h[1].length; out.push("<h" + n + ">" + inline(h[2]) + "</h" + n + ">"); i++; continue; }
-
+      if (h) { out.push("<h" + h[1].length + ">" + inline(h[2]) + "</h" + h[1].length + ">"); i++; continue; }
       if (/^>\s?/.test(l)) {
         var q = [];
-        while (i < linhas.length && /^>\s?/.test(linhas[i])) { q.push(linhas[i].replace(/^>\s?/, "")); i++; }
-        out.push("<blockquote>" + inline(q.join(" ")) + "</blockquote>");
-        continue;
+        while (i < L.length && /^>\s?/.test(L[i])) { q.push(L[i].replace(/^>\s?/, "")); i++; }
+        out.push("<blockquote>" + inline(q.join(" ")) + "</blockquote>"); continue;
       }
-
-      if (/^\s*\|.*\|\s*$/.test(l) && i + 1 < linhas.length && /^\s*\|[\s:|-]+\|\s*$/.test(linhas[i + 1])) {
-        var head = linhaTabela(l);
-        i += 2;
-        var corpo = [];
-        while (i < linhas.length && /^\s*\|.*\|\s*$/.test(linhas[i])) { corpo.push(linhaTabela(linhas[i])); i++; }
-        var t = "<div class='table-wrap'><table><thead><tr>" +
-          head.map(function (c) { return "<th>" + inline(c) + "</th>"; }).join("") +
-          "</tr></thead><tbody>" +
-          corpo.map(function (r) {
-            return "<tr>" + r.map(function (c) { return "<td>" + inline(c) + "</td>"; }).join("") + "</tr>";
-          }).join("") + "</tbody></table></div>";
-        out.push(t);
-        continue;
+      if (/^\s*\|.*\|\s*$/.test(l) && i + 1 < L.length && /^\s*\|[\s:|-]+\|\s*$/.test(L[i + 1])) {
+        var cab = cels(l); i += 2; var corpo = [];
+        while (i < L.length && /^\s*\|.*\|\s*$/.test(L[i])) { corpo.push(cels(L[i])); i++; }
+        out.push("<div class='tab-wrap'><table><thead><tr>" +
+          cab.map(function (c) { return "<th>" + inline(c) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+          corpo.map(function (r) { return "<tr>" + r.map(function (c) { return "<td>" + inline(c) + "</td>"; }).join("") + "</tr>"; }).join("") +
+          "</tbody></table></div>"); continue;
       }
-
       if (/^\s*[-*]\s+/.test(l)) {
         var ul = [];
-        while (i < linhas.length && /^\s*[-*]\s+/.test(linhas[i])) { ul.push(linhas[i].replace(/^\s*[-*]\s+/, "")); i++; }
-        flushLista("ul", ul);
-        continue;
+        while (i < L.length && /^\s*[-*]\s+/.test(L[i])) { ul.push(L[i].replace(/^\s*[-*]\s+/, "")); i++; }
+        out.push("<ul>" + ul.map(function (t) { return "<li>" + inline(t) + "</li>"; }).join("") + "</ul>"); continue;
       }
-
       if (/^\s*\d+[.)]\s+/.test(l)) {
         var ol = [];
-        while (i < linhas.length && /^\s*\d+[.)]\s+/.test(linhas[i])) { ol.push(linhas[i].replace(/^\s*\d+[.)]\s+/, "")); i++; }
-        flushLista("ol", ol);
-        continue;
+        while (i < L.length && /^\s*\d+[.)]\s+/.test(L[i])) { ol.push(L[i].replace(/^\s*\d+[.)]\s+/, "")); i++; }
+        out.push("<ol>" + ol.map(function (t) { return "<li>" + inline(t) + "</li>"; }).join("") + "</ol>"); continue;
       }
-
       var p = [];
-      while (i < linhas.length && !/^\s*$/.test(linhas[i]) && !/^(#{1,4}\s|>|\s*[-*]\s|\s*\d+[.)]\s|---+\s*$)/.test(linhas[i]) && !/^\s*\|/.test(linhas[i])) {
-        p.push(linhas[i]); i++;
-      }
-      if (p.length) out.push("<p>" + inline(p.join(" ")) + "</p>");
-      else i++;
+      while (i < L.length && !/^\s*$/.test(L[i]) && !/^(#{1,4}\s|>|\s*[-*]\s|\s*\d+[.)]\s|---+\s*$)/.test(L[i]) && !/^\s*\|/.test(L[i])) { p.push(L[i]); i++; }
+      if (p.length) out.push("<p>" + inline(p.join(" ")) + "</p>"); else i++;
     }
     return out.join("\n");
   }
 
-  /* ---------------- carregamento de dados locais ---------------- */
+  /* ---------- 1. cartões de decisão ---------- */
 
-  /* Modo embutido: se a página trouxer os dados dentro dela (build de preview,
-     um arquivo só), servimos daí em vez de buscar do disco. No site normal
-     esses objetos não existem e cai no fetch de sempre. */
+  function cartoes() {
+    var box = $("#decisao"); box.innerHTML = "";
+    D.ativos.forEach(function (a) {
+      var c = el("div", "cartao");
+      var topo = el("div", "cartao-topo");
+      var esq = el("div");
+      esq.appendChild(el("div", "cartao-nome", a.nome));
+      esq.appendChild(el("div", "cartao-contrato", a.contrato));
+      esq.appendChild(el("div", "cartao-preco num", fmt(a.ultimo, a.casas)));
+      var dir = a.var_pct > 0.005 ? "sobe" : (a.var_pct < -0.005 ? "desce" : "parado");
+      var seta = dir === "sobe" ? "▲" : (dir === "desce" ? "▼" : "■");
+      esq.appendChild(el("div", "cartao-var num " + dir,
+        seta + " " + (a.var_pct > 0 ? "+" : "") + fmt(a.var_pct, 2) + "%"));
+      topo.appendChild(esq);
+      topo.appendChild(el("span", "selo " + a.veredito.toLowerCase(), a.veredito));
+      c.appendChild(topo);
+      c.appendChild(el("p", "cartao-resumo", a.resumo));
 
-  function json(url) {
-    if (window.__TM_DATA && Object.prototype.hasOwnProperty.call(window.__TM_DATA, url)) {
-      return Promise.resolve(JSON.parse(JSON.stringify(window.__TM_DATA[url])));
-    }
-    return fetch(url, { cache: "no-store" }).then(function (r) {
-      if (!r.ok) throw new Error(url + " " + r.status);
-      return r.json();
-    });
-  }
-  function texto(url) {
-    if (window.__TM_TEXT && Object.prototype.hasOwnProperty.call(window.__TM_TEXT, url)) {
-      return Promise.resolve(window.__TM_TEXT[url]);
-    }
-    return fetch(url, { cache: "no-store" }).then(function (r) {
-      if (!r.ok) throw new Error(url + " " + r.status);
-      return r.text();
-    });
-  }
-
-  if (window.__TM_PREVIEW) {
-    var aviso = el("p", "disclaimer aviso");
-    aviso.innerHTML = "<strong>Prévia.</strong> Este ambiente bloqueia chamada a servidor externo, " +
-      "então nenhum cartão consegue buscar preço e todos aparecem como “sem fonte”. " +
-      "É exatamente o comportamento correto quando a fonte cai. No GitHub Pages ou rodando local, os preços entram.";
-    var alvo = document.querySelector("#panel-precos .disclaimer");
-    if (alvo && alvo.parentNode) alvo.parentNode.insertBefore(aviso, alvo);
-  }
-
-  /* ---------------- folha e histórico ---------------- */
-
-  var indiceFolhas = [];
-
-  function abrirFolha(entrada) {
-    $("#folha-meta").textContent = entrada.data + (entrada.titulo ? " · " + entrada.titulo : "");
-    $("#folha-body").innerHTML = "<p class='loading'>Carregando…</p>";
-    texto("data/folhas/" + entrada.arquivo)
-      .then(function (t) { $("#folha-body").innerHTML = md(t); })
-      .catch(function () {
-        $("#folha-body").innerHTML = "<p class='empty'>Não consegui abrir <code>data/folhas/" +
-          esc(entrada.arquivo) + "</code>. O arquivo está listado no índice mas não existe no repo.</p>";
-      });
-  }
-
-  json("data/folhas/index.json").then(function (idx) {
-    indiceFolhas = (idx.folhas || []).slice().sort(function (a, b) { return a.data < b.data ? 1 : -1; });
-
-    if (!indiceFolhas.length) {
-      $("#folha-body").innerHTML = "<p class='empty'>Nenhuma folha publicada ainda.</p>";
-      $("#historico").innerHTML = "<p class='empty'>Vazio.</p>";
-      return;
-    }
-
-    abrirFolha(indiceFolhas[0]);
-
-    var h = $("#historico");
-    h.innerHTML = "";
-    indiceFolhas.forEach(function (f) {
-      var b = el("button", "hist-link");
-      b.type = "button";
-      b.appendChild(el("span", "d", f.data));
-      b.appendChild(el("span", "t", f.titulo || "folha"));
-      b.addEventListener("click", function () {
-        abrirFolha(f);
-        document.querySelector('.tab[data-tab="folha"]').click();
-        window.scrollTo(0, 0);
-      });
-      h.appendChild(b);
-    });
-  }).catch(function () {
-    $("#folha-body").innerHTML = "<p class='empty'>Sem <code>data/folhas/index.json</code>.</p>";
-  });
-
-  /* ---------------- alertas e agenda ---------------- */
-
-  json("data/alerts.json").then(function (d) {
-    var box = $("#alertas"), lista = (d.alertas || d.alerts || []);
-    box.innerHTML = "";
-    if (!lista.length) { box.innerHTML = "<p class='empty'>Fila limpa. Nada HIGH/EXTREME agora.</p>"; return; }
-    lista.forEach(function (a) {
-      var nivel = String(a.nivel || a.level || "watch").toLowerCase();
-      var it = el("div", "item " + nivel);
-      var row = el("div", "row");
-      row.appendChild(el("span", "badge" + (nivel === "high" || nivel === "extreme" ? " warn" : ""), nivel.toUpperCase()));
-      if (a.ativo) row.appendChild(el("span", "tile-sym", a.ativo));
-      if (a.hora) { var t = el("time", null, a.hora); row.appendChild(t); }
-      it.appendChild(row);
-      it.appendChild(el("h4", null, a.fato || a.titulo || "—"));
-      if (a.porque) it.appendChild(el("p", null, a.porque));
-      box.appendChild(it);
-    });
-  }).catch(function () { $("#alertas").innerHTML = "<p class='empty'>Sem <code>data/alerts.json</code>.</p>"; });
-
-  json("data/calendar.json").then(function (d) {
-    var box = $("#agenda"), lista = (d.eventos || []);
-    box.innerHTML = "";
-    if (!lista.length) { box.innerHTML = "<p class='empty'>Calendário vazio.</p>"; return; }
-    lista.sort(function (a, b) { return a.data < b.data ? -1 : 1; }).forEach(function (e) {
-      var it = el("div", "item");
-      var row = el("div", "row");
-      row.appendChild(el("span", "badge", e.data));
-      if (e.ativos) row.appendChild(el("span", "tile-sym", e.ativos));
-      it.appendChild(row);
-      it.appendChild(el("h4", null, e.evento));
-      if (e.porque) it.appendChild(el("p", null, e.porque));
-      box.appendChild(it);
-    });
-  }).catch(function () { $("#agenda").innerHTML = "<p class='empty'>Sem <code>data/calendar.json</code>.</p>"; });
-
-  /* ---------------- preços ---------------- */
-
-  var config = null;
-  var estado = {};   /* sym -> {valor, pct, hist, fonte, hora, erro} */
-
-  function fmtNum(v, casas) {
-    if (v === null || v === undefined || isNaN(v)) return "—";
-    return Number(v).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
-  }
-  function casasPara(v) {
-    var a = Math.abs(v);
-    if (a >= 1000) return 0;
-    if (a >= 10) return 2;
-    if (a >= 1) return 3;
-    return 4;
-  }
-
-  function sparkline(hist) {
-    if (!hist || hist.length < 3) return null;
-    var w = 200, h = 36, pad = 3;
-    var min = Math.min.apply(null, hist), max = Math.max.apply(null, hist);
-    var span = (max - min) || 1;
-    var pts = hist.map(function (v, i) {
-      var x = pad + (i / (hist.length - 1)) * (w - pad * 2);
-      var y = h - pad - ((v - min) / span) * (h - pad * 2);
-      return x.toFixed(1) + "," + y.toFixed(1);
-    }).join(" ");
-    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", "0 0 " + w + " " + h);
-    svg.setAttribute("width", "100%");
-    svg.setAttribute("height", h);
-    svg.setAttribute("aria-hidden", "true");
-    svg.setAttribute("class", "tile-spark");
-    var pl = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    pl.setAttribute("points", pts);
-    pl.setAttribute("fill", "none");
-    pl.setAttribute("stroke", "var(--series-1)");
-    pl.setAttribute("stroke-width", "2");
-    pl.setAttribute("stroke-linecap", "round");
-    pl.setAttribute("stroke-linejoin", "round");
-    pl.setAttribute("vector-effect", "non-scaling-stroke");
-    svg.appendChild(pl);
-    return svg;
-  }
-
-  function cartao(item) {
-    var st = estado[item.sym] || {};
-    var t = el("div", "tile");
-    if (item.fonte === "manual") t.classList.add("manual");
-
-    var lab = el("div", "tile-label", item.label);
-    t.appendChild(lab);
-
-    var vivo = st.valor !== undefined && st.valor !== null && !isNaN(st.valor);
-
-    if (!vivo) {
-      t.classList.add("dead");
-      t.appendChild(el("div", "tile-value", item.fonte === "manual" ? "não informado" : "sem fonte"));
-      var f0 = el("div", "tile-foot");
-      f0.appendChild(el("span", null, st.erro || (item.fonte === "manual" ? "preencha em Ajustes" : "fonte indisponível")));
-      t.appendChild(f0);
-      return t;
-    }
-
-    var row = el("div", "tile-row");
-    var casas = item.casas !== undefined ? item.casas : casasPara(st.valor);
-    row.appendChild(el("div", "tile-value", fmtNum(st.valor, casas)));
-
-    if (st.pct !== undefined && st.pct !== null && !isNaN(st.pct)) {
-      var dir = st.pct > 0.0001 ? "up" : (st.pct < -0.0001 ? "down" : "flat");
-      var seta = dir === "up" ? "▲" : (dir === "down" ? "▼" : "■");
-      var d = el("span", "delta " + dir, seta + " " + (st.pct > 0 ? "+" : "") + fmtNum(st.pct, 2) + "%");
-      row.appendChild(d);
-    }
-    t.appendChild(row);
-
-    var sp = sparkline(st.hist);
-    if (sp) t.appendChild(sp);
-
-    var f = el("div", "tile-foot");
-    f.appendChild(el("span", null, st.fonte || "—"));
-    f.appendChild(el("span", null, st.hora || ""));
-    t.appendChild(f);
-    return t;
-  }
-
-  function renderPrecos() {
-    if (!config) return;
-    var grid = $("#grid-precos");
-    grid.innerHTML = "";
-    config.grupos.forEach(function (g) {
-      grid.appendChild(el("h3", "group-title", g.nome));
-      var wrap = el("div", "tiles");
-      g.itens.forEach(function (it) { wrap.appendChild(cartao(it)); });
-      grid.appendChild(wrap);
-    });
-  }
-
-  function renderManuais() {
-    ["win", "wdo"].forEach(function (k) {
-      var raw = get(k, "").replace(/\./g, "").replace(",", ".");
-      var v = parseFloat(raw);
-      estado[k.toUpperCase()] = isNaN(v)
-        ? { erro: "preencha em Ajustes" }
-        : { valor: v, fonte: "manual", hora: fmtHora(new Date()) };
-    });
-    renderPrecos();
-  }
-
-  /* --- provedores --- */
-
-  function alvos(fonte) {
-    var out = [];
-    if (!config) return out;
-    config.grupos.forEach(function (g) {
-      g.itens.forEach(function (it) { if (it.fonte === fonte) out.push(it); });
-    });
-    return out;
-  }
-
-  function marcarErro(itens, msg) {
-    itens.forEach(function (it) {
-      if (!estado[it.sym] || estado[it.sym].valor === undefined) estado[it.sym] = { erro: msg };
-    });
-  }
-
-  function fetchBrapi() {
-    var itens = alvos("brapi");
-    if (!itens.length) return Promise.resolve();
-    var token = get("brapi", "");
-    if (!token) { marcarErro(itens, "token não configurado"); return Promise.resolve(); }
-    var syms = itens.map(function (i) { return i.sym; }).join(",");
-    var url = "https://brapi.dev/api/quote/" + encodeURIComponent(syms) +
-      "?range=3mo&interval=1d&token=" + encodeURIComponent(token);
-    return json(url).then(function (d) {
-      var hora = fmtHora(new Date());
-      (d.results || []).forEach(function (r) {
-        var hist = (r.historicalDataPrice || []).map(function (p) { return p.close; })
-          .filter(function (x) { return typeof x === "number"; }).slice(-40);
-        estado[r.symbol] = {
-          valor: r.regularMarketPrice,
-          pct: r.regularMarketChangePercent,
-          hist: hist,
-          fonte: "brapi",
-          hora: hora
-        };
-      });
-      marcarErro(itens, "não retornado pela brapi");
-    }).catch(function () { marcarErro(itens, "brapi indisponível"); });
-  }
-
-  function fetchAwesome() {
-    var itens = alvos("awesome");
-    if (!itens.length) return Promise.resolve();
-    var syms = itens.map(function (i) { return i.sym; }).join(",");
-    var hora = fmtHora(new Date());
-    var p = json("https://economia.awesomeapi.com.br/json/last/" + syms).then(function (d) {
-      itens.forEach(function (it) {
-        var k = it.sym.replace("-", "");
-        var r = d[k];
-        if (!r) return;
-        estado[it.sym] = {
-          valor: parseFloat(r.bid),
-          pct: parseFloat(r.pctChange),
-          hist: (estado[it.sym] || {}).hist,
-          fonte: "awesomeapi",
-          hora: hora
-        };
-      });
-    });
-    var hs = itens.map(function (it) {
-      return json("https://economia.awesomeapi.com.br/json/daily/" + it.sym + "/30").then(function (arr) {
-        var h = arr.map(function (x) { return parseFloat(x.bid); }).reverse();
-        if (estado[it.sym]) estado[it.sym].hist = h;
-      }).catch(function () { });
-    });
-    return Promise.all([p].concat(hs))
-      .then(function () { marcarErro(itens, "não retornado"); })
-      .catch(function () { marcarErro(itens, "awesomeapi indisponível"); });
-  }
-
-  function fetchCripto() {
-    var itens = alvos("coingecko");
-    if (!itens.length) return Promise.resolve();
-    var ids = itens.map(function (i) { return i.id; }).join(",");
-    var url = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=" +
-      encodeURIComponent(ids) + "&sparkline=true&price_change_percentage=24h";
-    return json(url).then(function (arr) {
-      var hora = fmtHora(new Date());
-      itens.forEach(function (it) {
-        var r = arr.filter(function (x) { return x.id === it.id; })[0];
-        if (!r) return;
-        var sp = (r.sparkline_in_7d && r.sparkline_in_7d.price) || [];
-        var passo = Math.max(1, Math.floor(sp.length / 40));
-        estado[it.sym] = {
-          valor: r.current_price,
-          pct: r.price_change_percentage_24h,
-          hist: sp.filter(function (_, i) { return i % passo === 0; }),
-          fonte: "coingecko",
-          hora: hora
-        };
-      });
-      marcarErro(itens, "não retornado");
-    }).catch(function () { marcarErro(itens, "coingecko indisponível"); });
-  }
-
-  function fetchStooq() {
-    var itens = alvos("stooq");
-    if (!itens.length) return Promise.resolve();
-    var hora = fmtHora(new Date());
-    return Promise.all(itens.map(function (it) {
-      return fetch("https://stooq.com/q/d/l/?s=" + encodeURIComponent(it.sym) + "&i=d", { cache: "no-store" })
-        .then(function (r) { if (!r.ok) throw new Error("http"); return r.text(); })
-        .then(function (csv) {
-          var linhas = csv.trim().split("\n").slice(1);
-          var closes = linhas.map(function (l) { return parseFloat(l.split(",")[4]); })
-            .filter(function (x) { return !isNaN(x); });
-          if (closes.length < 2) throw new Error("vazio");
-          var hist = closes.slice(-40);
-          var ult = closes[closes.length - 1], ant = closes[closes.length - 2];
-          estado[it.sym] = {
-            valor: ult,
-            pct: ((ult - ant) / ant) * 100,
-            hist: hist,
-            fonte: "stooq (fechamento)",
-            hora: hora
-          };
-        })
-        .catch(function () {
-          if (!estado[it.sym] || estado[it.sym].valor === undefined) estado[it.sym] = { erro: "stooq bloqueado ou fora" };
+      if (a.gatilhos && (a.gatilhos.compra || a.gatilhos.venda)) {
+        var g = el("div", "gatilhos");
+        [["compra", "c", "COMPRA"], ["venda", "v", "VENDA"]].forEach(function (par) {
+          var it = a.gatilhos[par[0]]; if (!it) return;
+          var linha = el("div", "gat");
+          linha.appendChild(el("span", "gat-tag " + par[1], par[2]));
+          var t = el("div", "gat-txt");
+          t.appendChild(document.createTextNode(it.gatilho));
+          var inv = el("em", null, "invalida: " + it.invalida + (it.alvo ? " · alvo " + it.alvo : ""));
+          t.appendChild(inv);
+          linha.appendChild(t);
+          g.appendChild(linha);
         });
-    }));
-  }
-
-  var carregando = false;
-
-  function carregarPrecos() {
-    if (!config || carregando) return;
-    carregando = true;
-    $("#precos-meta").textContent = "buscando…";
-    renderManuais();
-    Promise.all([fetchBrapi(), fetchAwesome(), fetchCripto(), fetchStooq()]).then(function () {
-      carregando = false;
-      renderPrecos();
-      var vivos = 0, total = 0;
-      config.grupos.forEach(function (g) {
-        g.itens.forEach(function (i) {
-          total++;
-          var s = estado[i.sym];
-          if (s && s.valor !== undefined && s.valor !== null && !isNaN(s.valor)) vivos++;
-        });
-      });
-      $("#precos-meta").textContent = vivos + " de " + total + " com fonte · " + fmtHora(new Date());
+        c.appendChild(g);
+      }
+      box.appendChild(c);
     });
   }
 
-  var timer = null;
-  function agendar() {
-    if (timer) clearInterval(timer);
-    var s = parseInt(get("interval", "60"), 10);
-    if (s > 0) timer = setInterval(carregarPrecos, s * 1000);
+  /* ---------- 2. hierarquia ---------- */
+
+  var NIVEIS = [
+    { n: 1, nome: "Fibonacci / dinâmica", campo: "fibo", manda: true },
+    { n: 2, nome: "Contexto maior", campo: "contexto", manda: true },
+    { n: 3, nome: "Médias 8 e 20", campo: "medias" },
+    { n: 4, nome: "Estocástico 8,3,3", campo: "stoch" },
+    { n: 5, nome: "TRIX sinal 4", campo: "trix" },
+    { n: 6, nome: "ADX 8,8 + DI 8", campo: "adx" },
+    { n: 7, nome: "IFR 14", campo: "ifr" },
+    { n: 8, nome: "CCI 50 e PVT", campo: "ccipvt" }
+  ];
+
+  function chip(lado, txt, det) {
+    var cls = lado === "compra" ? "c" : (lado === "venda" ? "v" : "n");
+    var s = lado === "compra" ? "▲" : (lado === "venda" ? "▼" : "■");
+    var w = el("div");
+    var ch = el("span", "chip " + cls);
+    ch.appendChild(el("span", "seta", s));
+    ch.appendChild(document.createTextNode(txt));
+    w.appendChild(ch);
+    if (det) w.appendChild(el("div", "det", det));
+    return w;
   }
 
-  $("#btn-refresh").addEventListener("click", carregarPrecos);
+  function celula(m, campo, casas) {
+    if (!m) return el("span", "chip n", "—");
+    if (campo === "medias") {
+      var lado = m.posicao === "acima das duas" ? "compra" : (m.posicao === "abaixo das duas" ? "venda" : "neutro");
+      return chip(lado, m.posicao, "8: " + fmt(m.mm8, casas) + " · 20: " + fmt(m.mm20, casas));
+    }
+    if (campo === "stoch") return chip(m.stoch_lado, m.stoch_lado, "K " + m.stoch_k + " / D " + m.stoch_d);
+    if (campo === "trix") return chip(m.trix_lado, m.trix_lado, m.trix + " / " + m.trix_sinal);
+    if (campo === "adx") {
+      var det = "ADX " + m.adx + " · " + (m.aceleracao ? "acelera" : "sem aceleração") +
+        (m.kick !== "nenhum" ? " · kick de " + m.kick : "");
+      return chip(m.aceleracao ? m.di_lado : "neutro", m.di_lado === "compra" ? "DI+ por cima" : "DI− por cima", det);
+    }
+    if (campo === "ifr") {
+      var l = m.ifr > 55 ? "compra" : (m.ifr < 45 ? "venda" : "neutro");
+      return chip(l, String(m.ifr), m.ifr < 20 ? "sub-20 — alerta" : (m.ifr > 70 ? "esticado" : ""));
+    }
+    if (campo === "ccipvt") {
+      var l2 = (m.cci > 0 && m.pvt_lado === "compra") ? "compra" : ((m.cci < 0 && m.pvt_lado === "venda") ? "venda" : "neutro");
+      return chip(l2, "CCI " + m.cci, "PVT " + m.pvt_lado);
+    }
+    return el("span", "chip n", "—");
+  }
 
-  json("data/config.json").then(function (c) {
-    config = c;
-    renderManuais();
-    carregarPrecos();
-    agendar();
-  }).catch(function () {
-    $("#grid-precos").innerHTML = "<p class='empty'>Sem <code>data/config.json</code>.</p>";
-  });
+  function hierarquia() {
+    var a = D.ativos.filter(function (x) { return x.id === ativoSel; })[0];
+    var box = $("#hierarquia"); box.innerHTML = "";
+    if (!a) return;
+    var tabela = el("table", "grade");
+    var tfs = [["min60", "60 min"], ["diario", "Diário"], ["semanal", "Semanal"]]
+      .filter(function (t) { return a.tfs[t[0]]; });
 
-  document.addEventListener("visibilitychange", function () {
-    if (!document.hidden) carregarPrecos();
+    var thead = el("thead"), tr = el("tr");
+    tr.appendChild(el("th", null, "Nível"));
+    tfs.forEach(function (t) { tr.appendChild(el("th", null, t[1])); });
+    thead.appendChild(tr); tabela.appendChild(thead);
+
+    var tb = el("tbody");
+    NIVEIS.forEach(function (nv) {
+      var linha = el("tr", nv.manda ? "manda" : null);
+      var th = el("th");
+      th.appendChild(el("span", "nv", String(nv.n)));
+      th.appendChild(document.createTextNode(nv.nome));
+      linha.appendChild(th);
+      tfs.forEach(function (t) {
+        var td = el("td");
+        if (nv.campo === "fibo") {
+          var f = a.fibo && a.fibo[0];
+          td.appendChild(f ? chip("neutro", "pernada " + fmt(f.base, a.casas) + " → " + fmt(f.topo, a.casas), f.rotulo)
+            : el("span", "chip n", "—"));
+        } else if (nv.campo === "contexto") {
+          var mx = a.tfs.semanal || a.tfs.diario;
+          td.appendChild(mx ? chip(mx.posicao === "acima das duas" ? "compra" : "venda",
+            t[0] === "min60" ? "manda o diário/semanal" : mx.posicao, "") : el("span", "chip n", "—"));
+        } else {
+          td.appendChild(celula(a.tfs[t[0]], nv.campo, a.casas));
+        }
+        linha.appendChild(td);
+      });
+      tb.appendChild(linha);
+    });
+    tabela.appendChild(tb);
+    box.appendChild(tabela);
+  }
+
+  /* ---------- 3. gráfico ---------- */
+
+  var NS = "http://www.w3.org/2000/svg";
+  function svgEl(t, at) {
+    var n = document.createElementNS(NS, t);
+    for (var k in at) if (at.hasOwnProperty(k)) n.setAttribute(k, at[k]);
+    return n;
+  }
+
+  function grafico() {
+    var a = D.ativos.filter(function (x) { return x.id === ativoSel; })[0];
+    var box = $("#grafico"); box.innerHTML = "";
+    if (!a) return;
+    var g = a.grafico[tfSel] || a.grafico.diario;
+    if (!g) { box.appendChild(el("p", "vazio", "Sem série para este timeframe.")); return; }
+
+    var C = g.candles, n = C.length;
+    var W = 1200, HP = 300, HA = 90, GAP = 26, PADL = 30, PADR = 68, PADT = 12;
+    var H = PADT + HP + GAP + HA + 26;
+
+    var lo = Infinity, hi = -Infinity;
+    C.forEach(function (c) { lo = Math.min(lo, c[3]); hi = Math.max(hi, c[2]); });
+    g.mm8.concat(g.mm20).forEach(function (v) { lo = Math.min(lo, v); hi = Math.max(hi, v); });
+
+    var fib = [];
+    if (a.fibo && a.fibo[0]) {
+      a.fibo[0].niveis.forEach(function (nv) {
+        if (nv.tipo === "retração" && nv.preco > lo * 0.97 && nv.preco < hi * 1.03) fib.push(nv);
+      });
+    }
+    fib.forEach(function (nv) { lo = Math.min(lo, nv.preco); hi = Math.max(hi, nv.preco); });
+
+    var pad = (hi - lo) * 0.06 || 1;
+    lo -= pad; hi += pad;
+    var LW = W - PADL - PADR;
+    var passo = LW / n;
+    var larg = Math.max(1.5, Math.min(9, passo * 0.62));
+    function X(i) { return PADL + passo * (i + 0.5); }
+    function Y(v) { return PADT + HP - (v - lo) / (hi - lo) * HP; }
+
+    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
+      "aria-label": "Gráfico de " + a.nome + " com médias 8 e 20 e níveis de Fibonacci" });
+
+    var passos = 5;
+    for (var k = 0; k <= passos; k++) {
+      var v = lo + (hi - lo) * k / passos, y = Y(v);
+      svg.appendChild(svgEl("line", { x1: PADL, y1: y, x2: PADL + LW, y2: y,
+        stroke: "var(--linha)", "stroke-width": 1 }));
+      var tx = svgEl("text", { x: PADL + LW + 8, y: y + 4, fill: "var(--mudo)",
+        "font-size": 11, "font-family": "var(--mono)" });
+      tx.textContent = fmt(v, a.casas);
+      svg.appendChild(tx);
+    }
+
+    fib.forEach(function (nv) {
+      var y = Y(nv.preco);
+      var cor = nv.estado === "perdido" ? "var(--baixa)" : "var(--acento)";
+      svg.appendChild(svgEl("line", { x1: PADL, y1: y, x2: PADL + LW, y2: y,
+        stroke: cor, "stroke-width": 1.5, "stroke-dasharray": "5 4", opacity: .6 }));
+      var t = svgEl("text", { x: PADL + 6, y: y - 5, fill: cor, "font-size": 10.5,
+        "font-weight": 700, "font-family": "var(--mono)" });
+      t.textContent = "Fibo " + nv.n + " · " + fmt(nv.preco, a.casas);
+      svg.appendChild(t);
+    });
+
+    C.forEach(function (c, i) {
+      var o = c[1], h = c[2], l = c[3], cl = c[4];
+      var sobe = cl >= o;
+      var cor = sobe ? "var(--alta)" : "var(--baixa)";
+      svg.appendChild(svgEl("line", { x1: X(i), y1: Y(h), x2: X(i), y2: Y(l),
+        stroke: cor, "stroke-width": 1.2 }));
+      var y1 = Y(Math.max(o, cl)), y2 = Y(Math.min(o, cl));
+      svg.appendChild(svgEl("rect", { x: X(i) - larg / 2, y: y1, width: larg,
+        height: Math.max(1.2, y2 - y1), fill: cor, rx: 1 }));
+    });
+
+    function linha(arr, cor, larguraTraco) {
+      var d = arr.map(function (v, i) { return (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1); }).join(" ");
+      svg.appendChild(svgEl("path", { d: d, fill: "none", stroke: cor,
+        "stroke-width": larguraTraco, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    }
+    linha(g.mm20, "var(--mudo)", 2);
+    linha(g.mm8, "var(--atencao)", 2);
+
+    var AT = PADT + HP + GAP;
+    var amax = Math.max(45, Math.max.apply(null, g.adx) * 1.1);
+    function YA(v) { return AT + HA - (v / amax) * HA; }
+    svg.appendChild(svgEl("rect", { x: PADL, y: AT, width: LW, height: HA,
+      fill: "var(--sup2)", rx: 6 }));
+    [20, 32].forEach(function (nivel) {
+      if (nivel > amax) return;
+      var y = YA(nivel);
+      svg.appendChild(svgEl("line", { x1: PADL, y1: y, x2: PADL + LW, y2: y,
+        stroke: nivel === 32 ? "var(--atencao)" : "var(--mudo)", "stroke-width": 1,
+        "stroke-dasharray": "4 4", opacity: .8 }));
+      var t2 = svgEl("text", { x: PADL + LW + 8, y: y + 4, fill: "var(--mudo)", "font-size": 10.5,
+        "font-family": "var(--mono)" });
+      t2.textContent = String(nivel);
+      svg.appendChild(t2);
+    });
+    var dadx = g.adx.map(function (v, i) { return (i ? "L" : "M") + X(i).toFixed(1) + " " + YA(v).toFixed(1); }).join(" ");
+    svg.appendChild(svgEl("path", { d: dadx, fill: "none", stroke: "var(--acento)", "stroke-width": 2,
+      "stroke-linejoin": "round" }));
+    var rot = svgEl("text", { x: PADL + 8, y: AT + 15, fill: "var(--mudo)", "font-size": 10.5,
+      "font-weight": 700, "letter-spacing": ".06em" });
+    rot.textContent = "ADX 8,8";
+    svg.appendChild(rot);
+
+    var marcas = Math.min(7, n);
+    for (var j = 0; j < marcas; j++) {
+      var idx = Math.round(j * (n - 1) / (marcas - 1 || 1));
+      var td = svgEl("text", { x: X(idx), y: H - 6, fill: "var(--mudo)", "font-size": 10.5,
+        "text-anchor": "middle", "font-family": "var(--mono)" });
+      td.textContent = C[idx][0];
+      svg.appendChild(td);
+    }
+
+    box.appendChild(svg);
+  }
+
+  function extras() {
+    var a = D.ativos.filter(function (x) { return x.id === ativoSel; })[0];
+    if (!a) return;
+    $("#grafico-legenda").innerHTML =
+      '<i><span class="amostra" style="background:var(--atencao)"></span>média 8</i>' +
+      '<i><span class="amostra" style="background:var(--mudo)"></span>média 20</i>' +
+      '<i><span class="amostra" style="background:var(--acento)"></span>ADX</i>' +
+      '<i><span class="amostra" style="height:0;border-top:2px dashed var(--acento)"></span>Fibo</i>';
+
+    var fl = $("#fibo-lista"); fl.innerHTML = "";
+    (a.fibo || []).forEach(function (f) {
+      var gr = el("div", "fibo-grupo");
+      gr.appendChild(el("h4", null, f.rotulo));
+      gr.appendChild(el("p", "sub", "base " + fmt(f.base, a.casas) + " · topo " + fmt(f.topo, a.casas) + " · " + fmt(f.range, a.casas) + " pts"));
+      var linhas = el("div", "fibo-linhas");
+      f.niveis.forEach(function (nv) {
+        var it = el("span", "fibo-item " + (nv.estado === "alvo" ? "" : nv.estado));
+        it.innerHTML = "<b>" + nv.n + "</b> " + fmt(nv.preco, a.casas) +
+          (nv.estado === "perdido" ? " · perdido" : (nv.estado === "segurando" ? " · segura" : ""));
+        linhas.appendChild(it);
+      });
+      gr.appendChild(linhas);
+      fl.appendChild(gr);
+    });
+  }
+
+  function desenhar() { grafico(); extras(); }
+
+  /* ---------- 4. balões ---------- */
+
+  function baloes() {
+    var box = $("#baloes"); box.innerHTML = "";
+    (D.drivers || []).forEach(function (d) {
+      var b = el("div", "balao p" + (d.peso || 1));
+      var topo = el("div", "balao-topo");
+      var s = d.direcao === "alta" ? "▲" : (d.direcao === "baixa" ? "▼" : "■");
+      topo.appendChild(el("span", "dir " + d.direcao, s));
+      topo.appendChild(el("h3", null, d.titulo));
+      b.appendChild(topo);
+      b.appendChild(el("p", null, d.texto));
+      if (d.ativos) b.appendChild(el("div", "ativos", d.ativos));
+      box.appendChild(b);
+    });
+  }
+
+  /* ---------- 5. calendário ---------- */
+
+  var SEM = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+  var MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+  function calendario() {
+    var box = $("#calendario"); box.innerHTML = "";
+    var porDia = {};
+    (D.agenda || []).forEach(function (e) { (porDia[e.data] = porDia[e.data] || []).push(e); });
+    var dias = Object.keys(porDia).sort();
+    var amanha = dias[0];
+    dias.forEach(function (dt) {
+      var p = dt.split("-");
+      var d = new Date(+p[0], +p[1] - 1, +p[2]);
+      var cx = el("div", "dia" + (dt === amanha ? " amanha" : ""));
+      var cab = el("div", "dia-cab");
+      var nd = el("div");
+      nd.appendChild(el("span", "dia-num num", p[2] + "/" + MES[+p[1] - 1]));
+      cab.appendChild(nd);
+      cab.appendChild(el("span", "dia-sem", dt === amanha ? "amanhã · " + SEM[d.getDay()] : SEM[d.getDay()]));
+      cx.appendChild(cab);
+      porDia[dt].sort(function (a, b) { return a.hora < b.hora ? -1 : 1; }).forEach(function (e) {
+        var ev = el("div", "evt " + (e.impacto || ""));
+        ev.appendChild(el("span", "evt-hora", e.hora));
+        ev.appendChild(el("span", "pais " + e.pais, e.pais));
+        ev.appendChild(el("span", "evt-nome", e.evento));
+        cx.appendChild(ev);
+      });
+      box.appendChild(cx);
+    });
+    if (D.janela) {
+      var j = el("div", "janela");
+      j.innerHTML = "<b>" + esc(D.janela.inicio) + " – " + esc(D.janela.fim) + "</b> · " + esc(D.janela.nota);
+      box.appendChild(j);
+    }
+  }
+
+  /* ---------- 6. folha ---------- */
+
+  function folha() {
+    var btn = $("#btn-folha"), art = $("#folha");
+    btn.addEventListener("click", function () {
+      var abrir = art.hidden;
+      art.hidden = !abrir;
+      btn.textContent = abrir ? "Fechar" : "Abrir";
+      btn.setAttribute("aria-expanded", abrir ? "true" : "false");
+    });
+
+    fetch("data/folhas/index.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (idx) {
+      var lista = (idx.folhas || []).slice().sort(function (a, b) { return a.data < b.data ? 1 : -1; });
+      if (!lista.length) { art.innerHTML = "<p class='vazio'>Nenhuma folha publicada.</p>"; return; }
+      function abrir(f) {
+        fetch("data/folhas/" + f.arquivo, { cache: "no-store" }).then(function (r) { return r.text(); })
+          .then(function (t) { art.innerHTML = md(t); art.hidden = false; btn.textContent = "Fechar"; });
+      }
+      abrir(lista[0]);
+      art.hidden = true;
+      var h = $("#historico"); h.innerHTML = "";
+      lista.forEach(function (f) {
+        var b = el("button", "hist"); b.type = "button";
+        b.innerHTML = "<b>" + esc(f.data) + "</b>" + esc(f.titulo || "folha");
+        b.addEventListener("click", function () { abrir(f); window.scrollTo({ top: art.offsetTop - 80, behavior: "smooth" }); });
+        h.appendChild(b);
+      });
+    }).catch(function () { art.innerHTML = "<p class='vazio'>Sem índice de folhas.</p>"; });
+  }
+
+  /* ---------- abas ---------- */
+
+  function abas() {
+    var wa = $("#abas-ativo"); wa.innerHTML = "";
+    D.ativos.forEach(function (a) {
+      var b = el("button", "aba", a.nome); b.type = "button"; b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", a.id === ativoSel ? "true" : "false");
+      b.addEventListener("click", function () { ativoSel = a.id; abas(); hierarquia(); desenhar(); });
+      wa.appendChild(b);
+    });
+    var a0 = D.ativos.filter(function (x) { return x.id === ativoSel; })[0];
+    if (a0 && !a0.grafico[tfSel]) tfSel = "diario";
+    var wt = $("#abas-tf"); wt.innerHTML = "";
+    [["min60", "60 minutos"], ["diario", "Diário"]].forEach(function (t) {
+      if (!a0 || !a0.grafico[t[0]]) return;
+      var b = el("button", "aba", t[1]); b.type = "button"; b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", t[0] === tfSel ? "true" : "false");
+      b.addEventListener("click", function () { tfSel = t[0]; abas(); desenhar(); });
+      wt.appendChild(b);
+    });
+  }
+
+  /* ---------- início ---------- */
+
+  fetch("data/dados.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
+    D = d;
+    $("#carimbo").textContent = "dados de " + d.gerado_em;
+    $("#fonte").textContent = d.fonte + (d.aviso ? " · " + d.aviso : "");
+    cartoes(); abas(); hierarquia(); desenhar(); baloes(); calendario(); folha();
+    window.addEventListener("resize", function () { clearTimeout(window.__t); window.__t = setTimeout(desenhar, 200); });
+  }).catch(function (e) {
+    $("#decisao").innerHTML = "<p class='vazio'>Não consegui carregar <code>data/dados.json</code>.</p>";
   });
 
 })();
