@@ -9,97 +9,100 @@
 </head>
 <body>
 
-<header class="topbar">
-  <div class="brand">
-    <span class="dot" aria-hidden="true"></span>
-    <h1>Terminal Mesa</h1>
-    <span class="sub">assessor da sessão seguinte</span>
-  </div>
-  <div class="topbar-actions">
-    <span id="clock" class="clock" aria-live="off"></span>
-    <button id="btn-refresh" class="btn" type="button" title="Atualizar preços agora">Atualizar</button>
-    <button id="btn-settings" class="btn" type="button" aria-expanded="false" aria-controls="settings">Ajustes</button>
-    <button id="btn-theme" class="btn icon" type="button" title="Alternar tema" aria-label="Alternar tema">◐</button>
+<header class="topo">
+  <div class="topo-in">
+    <div class="marca">
+      <span class="pulso" aria-hidden="true"></span>
+      <b>Terminal Mesa</b>
+      <span class="sub">folha da sessão seguinte</span>
+    </div>
+    <div class="topo-dir">
+      <span id="carimbo" class="carimbo"></span>
+      <button id="btn-guia" class="btn" type="button">Como ler</button>
+      <button id="btn-tema" class="btn ic" type="button" aria-label="Alternar tema">◐</button>
+    </div>
   </div>
 </header>
 
-<section id="settings" class="settings" hidden>
-  <div class="settings-grid">
-    <label class="field">
-      <span>Token brapi.dev <a href="https://brapi.dev/dashboard" target="_blank" rel="noopener">(pegar grátis)</a></span>
-      <input id="in-token" type="password" placeholder="cole o token aqui" autocomplete="off" spellcheck="false">
-      <small>Necessário para ações B3 e Ibovespa. Fica só no seu navegador.</small>
-    </label>
-    <label class="field">
-      <span>Atualização automática</span>
-      <select id="in-interval">
-        <option value="0">desligada</option>
-        <option value="30">30 segundos</option>
-        <option value="60" selected>1 minuto</option>
-        <option value="300">5 minutos</option>
-      </select>
-      <small>Só roda com esta aba aberta.</small>
-    </label>
-    <label class="field">
-      <span>WIN — referência manual</span>
-      <input id="in-win" type="text" inputmode="decimal" placeholder="ex.: 186.400" autocomplete="off">
-      <small>Cotação de futuro não tem fonte pública gratuita. Digite e fica salvo aqui.</small>
-    </label>
-    <label class="field">
-      <span>WDO — referência manual</span>
-      <input id="in-wdo" type="text" inputmode="decimal" placeholder="ex.: 5.412,5" autocomplete="off">
-      <small>Mesma coisa do WIN.</small>
-    </label>
+<div id="guia" class="guia" hidden>
+  <div class="guia-in">
+    <h2>Como ler esta página em 30 segundos</h2>
+    <ol class="guia-passos">
+      <li><b>Comece pelo veredito.</b> Três cartões no topo. Se diz FORA, acabou — não tem trade. Se diz COMPRA ou VENDA, os dois números embaixo são o gatilho e a invalidação.</li>
+      <li><b>Confira a hierarquia.</b> A grade mostra os 8 níveis do método em três timeframes. Verde é compra, vermelho é venda, cinza é neutro. Os dois primeiros níveis mandam nos outros seis.</li>
+      <li><b>Olhe o gráfico só depois.</b> Ele confirma o que a grade já disse. As linhas tracejadas são os Fibos.</li>
+      <li><b>Os balões são o porquê.</b> Tamanho é peso, seta é direção.</li>
+    </ol>
+    <p class="guia-nota">Tudo aqui vem da série exata exportada do Profit. Nada é lido de imagem, nada é estimado.</p>
+    <button id="guia-ok" class="btn primario" type="button">Entendi, não mostrar de novo</button>
   </div>
-  <p class="settings-note">Nada aqui é enviado para lugar nenhum. Fica no <code>localStorage</code> deste navegador.</p>
-</section>
-
-<nav class="tabs" role="tablist">
-  <button class="tab" role="tab" data-tab="folha" aria-selected="true">Folha</button>
-  <button class="tab" role="tab" data-tab="precos" aria-selected="false">Preços</button>
-  <button class="tab" role="tab" data-tab="agenda" aria-selected="false">Agenda e alertas</button>
-  <button class="tab" role="tab" data-tab="historico" aria-selected="false">Histórico</button>
-</nav>
+</div>
 
 <main>
 
-  <section id="panel-folha" class="panel" role="tabpanel">
-    <div class="panel-head">
-      <h2>Folha da sessão seguinte</h2>
-      <span id="folha-meta" class="meta"></span>
+  <section class="faixa">
+    <div class="rotulo-secao">
+      <h2>Decisão de amanhã</h2>
+      <p>O que fazer no pregão seguinte, por ativo.</p>
     </div>
-    <article id="folha-body" class="prose">
-      <p class="loading">Carregando folha…</p>
-    </article>
+    <div id="decisao" class="cartoes"></div>
   </section>
 
-  <section id="panel-precos" class="panel" role="tabpanel" hidden>
-    <div class="panel-head">
-      <h2>Preços</h2>
-      <span id="precos-meta" class="meta"></span>
+  <section class="faixa">
+    <div class="rotulo-secao">
+      <h2>Hierarquia</h2>
+      <p>Os oito níveis do operacional, nos três timeframes. Os níveis 1 e 2 mandam nos outros seis — se eles estão contra, indicador alinhado não autoriza entrada.</p>
     </div>
-    <p class="disclaimer">Cada cartão mostra a fonte e a hora do dado. Cartão sem fonte fica cinza e não recebe número inventado.</p>
-    <div id="grid-precos"></div>
+    <div id="abas-ativo" class="abas" role="tablist"></div>
+    <div id="hierarquia" class="grade-wrap"></div>
   </section>
 
-  <section id="panel-agenda" class="panel" role="tabpanel" hidden>
-    <div class="panel-head"><h2>Agenda e alertas</h2></div>
-    <h3 class="sub-head">Alertas abertos</h3>
-    <div id="alertas"></div>
-    <h3 class="sub-head">Calendário</h3>
-    <div id="agenda"></div>
+  <section class="faixa">
+    <div class="rotulo-secao">
+      <h2>Gráfico</h2>
+      <p>Candles com média 8 e média 20 — o par do Duplo Rompimento — e os níveis de Fibonacci da pernada. Embaixo, o ADX com as linhas de 20 e 32.</p>
+    </div>
+    <div class="grafico-barra">
+      <div id="abas-tf" class="abas peq" role="tablist"></div>
+      <span id="grafico-legenda" class="legenda"></span>
+    </div>
+    <div id="grafico" class="grafico"></div>
+    <div id="fibo-lista" class="fibo-lista"></div>
   </section>
 
-  <section id="panel-historico" class="panel" role="tabpanel" hidden>
-    <div class="panel-head"><h2>Histórico de folhas</h2></div>
-    <p class="disclaimer">Para conferir o que a leitura de ontem acertou e o que errou.</p>
-    <div id="historico"></div>
+  <section class="faixa">
+    <div class="rotulo-secao">
+      <h2>O que mexeu no preço</h2>
+      <p>Tamanho do balão é o peso. A seta é a direção para o índice.</p>
+    </div>
+    <div id="baloes" class="baloes"></div>
+  </section>
+
+  <section class="faixa">
+    <div class="rotulo-secao">
+      <h2>Calendário</h2>
+      <p>Só Brasil, Estados Unidos e zona do euro. Só o que move preço.</p>
+    </div>
+    <div id="calendario" class="calendario"></div>
+  </section>
+
+  <section class="faixa">
+    <div class="rotulo-secao linha">
+      <div>
+        <h2>Folha completa</h2>
+        <p>O texto inteiro, para quando você quiser o raciocínio e não só a conclusão.</p>
+      </div>
+      <button id="btn-folha" class="btn" type="button" aria-expanded="false">Abrir</button>
+    </div>
+    <article id="folha" class="prosa" hidden></article>
+    <div id="historico" class="historico"></div>
   </section>
 
 </main>
 
-<footer class="footer">
+<footer class="rodape">
   <p>Material de estudo pessoal. Não é recomendação de investimento. Mercado futuro envolve perda de capital.</p>
+  <p id="fonte" class="fonte"></p>
 </footer>
 
 <script src="assets/app.js"></script>
