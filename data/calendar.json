@@ -1,0 +1,24 @@
+{
+  "_leia": "Espelho de terminal-pessoal/workspace/config/calendar.md. Atualize toda domingo à noite.",
+  "atualizado_em": "2026-09-09",
+  "eventos": [
+    {
+      "data": "2026-09-10",
+      "evento": "PPI EUA (ago) + decisão do BCE",
+      "porque": "Inflação no atacado nos EUA e juro da zona do euro no mesmo dia.",
+      "ativos": "SPY, TNX, DXY"
+    },
+    {
+      "data": "2026-09-11",
+      "evento": "IPCA BR (ago) + CPI EUA (ago)",
+      "porque": "Inflação dos dois lados na mesma data. Dia de gap no dólar.",
+      "ativos": "WDO, USDBRL, ITUB4, SPY"
+    },
+    {
+      "data": "2026-09-16",
+      "evento": "FOMC + Copom",
+      "porque": "Duas decisões de juro no mesmo dia. Volatilidade concentrada na tarde.",
+      "ativos": "WIN, WDO, SPY, TNX, bancos"
+    }
+  ]
+}
