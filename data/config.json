@@ -1,0 +1,44 @@
+{
+  "_leia": "Cada item tem uma fonte. manual = você digita em Ajustes. brapi = ações e índices B3 (exige token grátis). awesome = câmbio (sem token). coingecko = cripto (sem token). stooq = fechamento de ativos globais (pode ser bloqueado por CORS; se for, o cartão fica cinza em vez de mostrar número inventado).",
+  "grupos": [
+    {
+      "nome": "Mesa",
+      "itens": [
+        { "label": "WIN — referência", "sym": "WIN", "fonte": "manual", "casas": 0 },
+        { "label": "WDO — referência", "sym": "WDO", "fonte": "manual", "casas": 1 },
+        { "label": "Ibovespa (proxy do WIN)", "sym": "^BVSP", "fonte": "brapi", "casas": 0 },
+        { "label": "USD/BRL (proxy do WDO)", "sym": "USD-BRL", "fonte": "awesome", "casas": 4 }
+      ]
+    },
+    {
+      "nome": "Ações B3",
+      "itens": [
+        { "label": "Petrobras", "sym": "PETR4", "fonte": "brapi", "casas": 2 },
+        { "label": "Vale", "sym": "VALE3", "fonte": "brapi", "casas": 2 },
+        { "label": "Itaú", "sym": "ITUB4", "fonte": "brapi", "casas": 2 },
+        { "label": "Banco do Brasil", "sym": "BBAS3", "fonte": "brapi", "casas": 2 },
+        { "label": "PRIO", "sym": "PRIO3", "fonte": "brapi", "casas": 2 },
+        { "label": "WEG", "sym": "WEGE3", "fonte": "brapi", "casas": 2 },
+        { "label": "B3", "sym": "B3SA3", "fonte": "brapi", "casas": 2 }
+      ]
+    },
+    {
+      "nome": "Global (fechamento)",
+      "itens": [
+        { "label": "S&P 500", "sym": "spy.us", "fonte": "stooq", "casas": 2 },
+        { "label": "Nasdaq 100", "sym": "qqq.us", "fonte": "stooq", "casas": 2 },
+        { "label": "WTI", "sym": "cl.f", "fonte": "stooq", "casas": 2 },
+        { "label": "Ouro", "sym": "gc.f", "fonte": "stooq", "casas": 2 },
+        { "label": "US 10 anos", "sym": "10usy.b", "fonte": "stooq", "casas": 3 }
+      ]
+    },
+    {
+      "nome": "Cripto",
+      "itens": [
+        { "label": "Bitcoin", "sym": "BTC", "id": "bitcoin", "fonte": "coingecko", "casas": 0 },
+        { "label": "Ethereum", "sym": "ETH", "id": "ethereum", "fonte": "coingecko", "casas": 2 },
+        { "label": "Solana", "sym": "SOL", "id": "solana", "fonte": "coingecko", "casas": 2 }
+      ]
+    }
+  ]
+}
