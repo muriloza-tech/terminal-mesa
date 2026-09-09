@@ -211,9 +211,82 @@
     });
     tabela.appendChild(tb);
     box.appendChild(tabela);
+    legendaGrade();
   }
 
-  /* ---------- 3. gráfico ---------- */
+  /* ---------- legenda da hierarquia ---------- */
+
+  var GLOSSARIO = [
+    ["1", "Fibonacci / dinâmica",
+      "A pernada de referência: do fundo ao topo (ou do topo ao fundo) que está mandando agora. As retrações 23, 50 e 78 são onde o preço pode parar na volta; as extensões 111, 127, 141 e 161 são alvo. Perder o 23 é o primeiro aviso de que a pernada acabou."],
+    ["2", "Contexto maior",
+      "Onde o preço está no timeframe acima do que você opera. Se o semanal e o diário estão comprados, venda estrutural não é autorizada — no máximo correção."],
+    ["3", "Médias 8 e 20",
+      "O chip diz se o fechamento está acima das duas, abaixo das duas, ou entre elas. Os números embaixo são o valor exato de cada média. Duplo Rompimento é fechar além das duas no mesmo candle."],
+    ["4", "Estocástico 8,3,3",
+      "Quem está no comando dentro do range. K acima de D é compra, K abaixo é venda. Os números embaixo são K e D."],
+    ["5", "TRIX sinal 4",
+      "Confirmação de virada. TRIX acima da própria média (o sinal) é compra, abaixo é venda. Os dois números são TRIX e sinal — quanto mais perto, mais perto do cruzamento."],
+    ["6", "ADX 8,8 + DI 8",
+      "Força, não direção. Tem aceleração se o ADX está acima de 32 ou abaixo de 20; entre os dois, o movimento não anda. Kick é o V (ou xis invertido) no próprio ADX. Quem dá a direção é o DI: azul por cima marca topo, por baixo marca fundo."],
+    ["7", "IFR 14",
+      "Termômetro de esticado. Acima de 70 é compra esticada, abaixo de 30 é venda esticada, sub-20 é alerta. Não é sinal de entrada sozinho."],
+    ["8", "CCI 50 e PVT",
+      "Última confirmação. CCI positivo com PVT subindo fecha o lado comprado; CCI negativo com PVT caindo fecha o vendido. Divergência entre os dois é motivo para ficar de fora."]
+  ];
+
+  function legendaGrade() {
+    var box = $("#hier-legenda"); if (!box) return;
+    if (box.dataset.pronto === "1") return;
+    box.dataset.pronto = "1";
+
+    var det = el("details", "leg");
+    det.open = get("leg_aberta", "1") === "1";
+    det.addEventListener("toggle", function () { set("leg_aberta", det.open ? "1" : "0"); });
+    var sum = el("summary", null, "O que cada coisa da grade quer dizer");
+    det.appendChild(sum);
+    var corpo = el("div", "leg-in");
+
+    var chaves = el("div", "leg-chaves");
+    [["c", "▲", "compra", "o nível está a favor da compra"],
+     ["v", "▼", "venda", "o nível está a favor da venda"],
+     ["n", "■", "neutro", "o nível não autoriza nada — dado sem lado"]].forEach(function (p) {
+      var it = el("div", "leg-chave");
+      var ch = el("span", "chip " + p[0]);
+      ch.appendChild(el("span", "seta", p[1]));
+      ch.appendChild(document.createTextNode(p[2]));
+      it.appendChild(ch);
+      it.appendChild(el("span", "leg-txt", p[3]));
+      chaves.appendChild(it);
+    });
+    corpo.appendChild(chaves);
+
+    var notas = el("ul", "leg-notas");
+    [
+      "<b>A linha cinza menor embaixo de cada chip</b> é o número cru que gerou o veredito. É ele que você confere no Profit — se não bater, o dado está velho.",
+      "<b>As duas primeiras linhas ficam destacadas</b> porque mandam nas outras seis. Fibonacci e contexto decidem o lado; os indicadores só dizem a hora. Indicador alinhado com os níveis 1 e 2 contra não autoriza entrada nenhuma.",
+      "<b>As três colunas são os mesmos oito níveis em timeframes diferentes.</b> Divergência entre elas é normal e é justamente a informação: 60 min contra o diário é correção dentro de tendência, não reversão.",
+      "<b>Um traço (—)</b> quer dizer que a série daquele timeframe não foi exportada. Nada é estimado para preencher buraco."
+    ].forEach(function (t) { var li = el("li"); li.innerHTML = t; notas.appendChild(li); });
+    corpo.appendChild(notas);
+
+    var gl = el("div", "leg-niveis");
+    GLOSSARIO.forEach(function (p) {
+      var it = el("div", "leg-nivel" + (p[0] === "1" || p[0] === "2" ? " manda" : ""));
+      var h = el("h5");
+      h.appendChild(el("span", "nv", p[0]));
+      h.appendChild(document.createTextNode(p[1]));
+      it.appendChild(h);
+      it.appendChild(el("p", null, p[2]));
+      gl.appendChild(it);
+    });
+    corpo.appendChild(gl);
+
+    det.appendChild(corpo);
+    box.appendChild(det);
+  }
+
+  /* ---------- 3. gráfico interativo ---------- */
 
   var NS = "http://www.w3.org/2000/svg";
   function svgEl(t, at) {
@@ -222,25 +295,98 @@
     return n;
   }
 
-  function grafico() {
-    var a = D.ativos.filter(function (x) { return x.id === ativoSel; })[0];
-    var box = $("#grafico"); box.innerHTML = "";
-    if (!a) return;
-    var g = a.grafico[tfSel] || a.grafico.diario;
-    if (!g) { box.appendChild(el("p", "vazio", "Sem série para este timeframe.")); return; }
+  var MINJAN = 8;          // mínimo de candles na tela
+  var vis = null;          // janela visível: {chave, n, i0, i1}
+  var GEO = null;          // geometria do último desenho, usada pelo arrasto
+  var arrasto = null;
 
-    var C = g.candles, n = C.length;
+  function chaveSerie() { return ativoSel + ":" + tfSel; }
+
+  function serie() {
+    var a = D.ativos.filter(function (x) { return x.id === ativoSel; })[0];
+    if (!a) return null;
+    var g = a.grafico[tfSel] || a.grafico.diario;
+    if (!g) return null;
+    return { a: a, g: g };
+  }
+
+  function janela(n, reset) {
+    if (reset || !vis || vis.chave !== chaveSerie() || vis.n !== n) {
+      vis = { chave: chaveSerie(), n: n, i0: 0, i1: n - 1 };
+      return vis;
+    }
+    if (vis.i1 - vis.i0 + 1 < MINJAN) vis.i1 = vis.i0 + MINJAN - 1;
+    if (vis.i1 > n - 1) { vis.i0 -= vis.i1 - (n - 1); vis.i1 = n - 1; }
+    if (vis.i0 < 0) vis.i0 = 0;
+    if (vis.i1 > n - 1) vis.i1 = n - 1;
+    return vis;
+  }
+
+  function zoom(fator, ancora) {
+    if (!vis) return;
+    var m = vis.i1 - vis.i0 + 1, n = vis.n;
+    var novo = Math.max(MINJAN, Math.min(n, Math.round(m * fator)));
+    if (novo === m) return;
+    if (ancora === undefined) ancora = vis.i1;                 // sem cursor, ancora no candle mais recente
+    var frac = m > 1 ? (ancora - vis.i0) / (m - 1) : 0;
+    vis.i0 = Math.round(ancora - frac * (novo - 1));
+    vis.i1 = vis.i0 + novo - 1;
+    janela(n); desenhar();
+  }
+
+  function pan(delta) {
+    if (!vis) return;
+    var n = vis.n, i0 = vis.i0 + delta, i1 = vis.i1 + delta;
+    if (i0 < 0) { i1 -= i0; i0 = 0; }
+    if (i1 > n - 1) { i0 -= i1 - (n - 1); i1 = n - 1; }
+    if (i0 < 0) i0 = 0;
+    if (i0 === vis.i0 && i1 === vis.i1) return;
+    vis.i0 = i0; vis.i1 = i1; desenhar();
+  }
+
+  function aoMover(ev) {
+    if (!arrasto || !GEO) return;
+    var dx = (ev.clientX - arrasto.x) * arrasto.esc;
+    var d = Math.round(dx / arrasto.passo);
+    var n = arrasto.n, i0 = arrasto.i0 - d, i1 = arrasto.i1 - d;
+    if (i0 < 0) { i1 -= i0; i0 = 0; }
+    if (i1 > n - 1) { i0 -= i1 - (n - 1); i1 = n - 1; }
+    if (i0 < 0) i0 = 0;
+    if (!vis || (i0 === vis.i0 && i1 === vis.i1)) return;
+    vis.i0 = i0; vis.i1 = i1; desenhar();
+  }
+  function aoSoltar() {
+    if (!arrasto) return;
+    arrasto = null;
+    document.body.classList.remove("arrastando");
+  }
+  window.addEventListener("pointermove", aoMover);
+  window.addEventListener("pointerup", aoSoltar);
+  window.addEventListener("pointercancel", aoSoltar);
+
+  function grafico() {
+    var S = serie();
+    var box = $("#grafico"); box.innerHTML = "";
+    if (!S) { box.appendChild(el("p", "vazio", "Sem série para este timeframe.")); return; }
+    var a = S.a, g = S.g, C = g.candles, n = C.length;
+
+    var v = janela(n), i0 = v.i0, i1 = v.i1, m = i1 - i0 + 1;
+
     var W = 1200, HP = 300, HA = 90, GAP = 26, PADL = 30, PADR = 68, PADT = 12;
     var H = PADT + HP + GAP + HA + 26;
+    var AT = PADT + HP + GAP;
 
-    var lo = Infinity, hi = -Infinity;
-    C.forEach(function (c) { lo = Math.min(lo, c[3]); hi = Math.max(hi, c[2]); });
-    g.mm8.concat(g.mm20).forEach(function (v) { lo = Math.min(lo, v); hi = Math.max(hi, v); });
+    var lo = Infinity, hi = -Infinity, i;
+    for (i = i0; i <= i1; i++) {
+      lo = Math.min(lo, C[i][3]); hi = Math.max(hi, C[i][2]);
+      if (g.mm8[i] != null) { lo = Math.min(lo, g.mm8[i]); hi = Math.max(hi, g.mm8[i]); }
+      if (g.mm20[i] != null) { lo = Math.min(lo, g.mm20[i]); hi = Math.max(hi, g.mm20[i]); }
+    }
 
     var fib = [];
     if (a.fibo && a.fibo[0]) {
       a.fibo[0].niveis.forEach(function (nv) {
-        if (nv.tipo === "retração" && nv.preco > lo * 0.97 && nv.preco < hi * 1.03) fib.push(nv);
+        if (nv.tipo === "retração" && nv.preco > lo - (hi - lo) * 0.25 && nv.preco < hi + (hi - lo) * 0.25) fib.push(nv);
       });
     }
     fib.forEach(function (nv) { lo = Math.min(lo, nv.preco); hi = Math.max(hi, nv.preco); });
@@ -248,89 +394,218 @@
     var pad = (hi - lo) * 0.06 || 1;
     lo -= pad; hi += pad;
     var LW = W - PADL - PADR;
-    var passo = LW / n;
-    var larg = Math.max(1.5, Math.min(9, passo * 0.62));
-    function X(i) { return PADL + passo * (i + 0.5); }
-    function Y(v) { return PADT + HP - (v - lo) / (hi - lo) * HP; }
+    var passo = LW / m;
+    var larg = Math.max(1.2, Math.min(22, passo * 0.62));
+    function X(i) { return PADL + passo * (i - i0 + 0.5); }
+    function Y(v2) { return PADT + HP - (v2 - lo) / (hi - lo) * HP; }
 
-    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
-      "aria-label": "Gráfico de " + a.nome + " com médias 8 e 20 e níveis de Fibonacci" });
+    var amax = 45;
+    for (i = i0; i <= i1; i++) if (g.adx[i] != null) amax = Math.max(amax, g.adx[i] * 1.1);
+    function YA(v2) { return AT + HA - (v2 / amax) * HA; }
 
+    GEO = { W: W, PADL: PADL, LW: LW, passo: passo, i0: i0, i1: i1, n: n, HP: HP, PADT: PADT, AT: AT, HA: HA };
+
+    var svg = svgEl("svg", {
+      viewBox: "0 0 " + W + " " + H, tabindex: "0", role: "img",
+      "aria-label": "Gráfico de " + a.nome + " — candles com médias 8 e 20, níveis de Fibonacci e painel de ADX. " +
+        "Use a roda do mouse para aproximar, arraste para deslocar."
+    });
+
+    // grade horizontal + eixo de preço
     var passos = 5;
     for (var k = 0; k <= passos; k++) {
-      var v = lo + (hi - lo) * k / passos, y = Y(v);
+      var pv = lo + (hi - lo) * k / passos, y = Y(pv);
       svg.appendChild(svgEl("line", { x1: PADL, y1: y, x2: PADL + LW, y2: y,
         stroke: "var(--linha)", "stroke-width": 1 }));
       var tx = svgEl("text", { x: PADL + LW + 8, y: y + 4, fill: "var(--mudo)",
         "font-size": 11, "font-family": "var(--mono)" });
-      tx.textContent = fmt(v, a.casas);
+      tx.textContent = fmt(pv, a.casas);
       svg.appendChild(tx);
     }
 
+    // fibos
     fib.forEach(function (nv) {
-      var y = Y(nv.preco);
+      var y2 = Y(nv.preco);
       var cor = nv.estado === "perdido" ? "var(--baixa)" : "var(--acento)";
-      svg.appendChild(svgEl("line", { x1: PADL, y1: y, x2: PADL + LW, y2: y,
+      svg.appendChild(svgEl("line", { x1: PADL, y1: y2, x2: PADL + LW, y2: y2,
         stroke: cor, "stroke-width": 1.5, "stroke-dasharray": "5 4", opacity: .6 }));
-      var t = svgEl("text", { x: PADL + 6, y: y - 5, fill: cor, "font-size": 10.5,
+      var t = svgEl("text", { x: PADL + 6, y: y2 - 5, fill: cor, "font-size": 10.5,
         "font-weight": 700, "font-family": "var(--mono)" });
       t.textContent = "Fibo " + nv.n + " · " + fmt(nv.preco, a.casas);
       svg.appendChild(t);
     });
 
-    C.forEach(function (c, i) {
-      var o = c[1], h = c[2], l = c[3], cl = c[4];
-      var sobe = cl >= o;
-      var cor = sobe ? "var(--alta)" : "var(--baixa)";
+    // candles
+    for (i = i0; i <= i1; i++) {
+      var c = C[i], o = c[1], h = c[2], l = c[3], cl = c[4];
+      var cor2 = cl >= o ? "var(--alta)" : "var(--baixa)";
       svg.appendChild(svgEl("line", { x1: X(i), y1: Y(h), x2: X(i), y2: Y(l),
-        stroke: cor, "stroke-width": 1.2 }));
-      var y1 = Y(Math.max(o, cl)), y2 = Y(Math.min(o, cl));
-      svg.appendChild(svgEl("rect", { x: X(i) - larg / 2, y: y1, width: larg,
-        height: Math.max(1.2, y2 - y1), fill: cor, rx: 1 }));
-    });
-
-    function linha(arr, cor, larguraTraco) {
-      var d = arr.map(function (v, i) { return (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1); }).join(" ");
-      svg.appendChild(svgEl("path", { d: d, fill: "none", stroke: cor,
-        "stroke-width": larguraTraco, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+        stroke: cor2, "stroke-width": Math.max(1.2, larg * 0.16) }));
+      var ya = Y(Math.max(o, cl)), yb = Y(Math.min(o, cl));
+      svg.appendChild(svgEl("rect", { x: X(i) - larg / 2, y: ya, width: larg,
+        height: Math.max(1.2, yb - ya), fill: cor2, rx: 1 }));
     }
-    linha(g.mm20, "var(--mudo)", 2);
-    linha(g.mm8, "var(--atencao)", 2);
 
-    var AT = PADT + HP + GAP;
-    var amax = Math.max(45, Math.max.apply(null, g.adx) * 1.1);
-    function YA(v) { return AT + HA - (v / amax) * HA; }
-    svg.appendChild(svgEl("rect", { x: PADL, y: AT, width: LW, height: HA,
-      fill: "var(--sup2)", rx: 6 }));
+    // médias
+    function linha(arr, cor, lt, fy) {
+      var d = "", primeiro = true;
+      for (var j = i0; j <= i1; j++) {
+        if (arr[j] == null) continue;
+        d += (primeiro ? "M" : "L") + X(j).toFixed(1) + " " + fy(arr[j]).toFixed(1) + " ";
+        primeiro = false;
+      }
+      if (d) svg.appendChild(svgEl("path", { d: d, fill: "none", stroke: cor,
+        "stroke-width": lt, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    }
+    linha(g.mm20, "var(--mudo)", 2, Y);
+    linha(g.mm8, "var(--atencao)", 2, Y);
+
+    // painel ADX
+    svg.appendChild(svgEl("rect", { x: PADL, y: AT, width: LW, height: HA, fill: "var(--sup2)", rx: 6 }));
     [20, 32].forEach(function (nivel) {
       if (nivel > amax) return;
-      var y = YA(nivel);
-      svg.appendChild(svgEl("line", { x1: PADL, y1: y, x2: PADL + LW, y2: y,
+      var y3 = YA(nivel);
+      svg.appendChild(svgEl("line", { x1: PADL, y1: y3, x2: PADL + LW, y2: y3,
         stroke: nivel === 32 ? "var(--atencao)" : "var(--mudo)", "stroke-width": 1,
         "stroke-dasharray": "4 4", opacity: .8 }));
-      var t2 = svgEl("text", { x: PADL + LW + 8, y: y + 4, fill: "var(--mudo)", "font-size": 10.5,
-        "font-family": "var(--mono)" });
+      var t2 = svgEl("text", { x: PADL + LW + 8, y: y3 + 4, fill: "var(--mudo)",
+        "font-size": 10.5, "font-family": "var(--mono)" });
       t2.textContent = String(nivel);
       svg.appendChild(t2);
     });
-    var dadx = g.adx.map(function (v, i) { return (i ? "L" : "M") + X(i).toFixed(1) + " " + YA(v).toFixed(1); }).join(" ");
-    svg.appendChild(svgEl("path", { d: dadx, fill: "none", stroke: "var(--acento)", "stroke-width": 2,
-      "stroke-linejoin": "round" }));
+    linha(g.adx, "var(--acento)", 2, YA);
     var rot = svgEl("text", { x: PADL + 8, y: AT + 15, fill: "var(--mudo)", "font-size": 10.5,
       "font-weight": 700, "letter-spacing": ".06em" });
     rot.textContent = "ADX 8,8";
     svg.appendChild(rot);
 
-    var marcas = Math.min(7, n);
-    for (var j = 0; j < marcas; j++) {
-      var idx = Math.round(j * (n - 1) / (marcas - 1 || 1));
+    // datas
+    var marcas = Math.max(2, Math.min(7, m));
+    for (var j2 = 0; j2 < marcas; j2++) {
+      var idx = i0 + Math.round(j2 * (m - 1) / (marcas - 1 || 1));
       var td = svgEl("text", { x: X(idx), y: H - 6, fill: "var(--mudo)", "font-size": 10.5,
         "text-anchor": "middle", "font-family": "var(--mono)" });
       td.textContent = C[idx][0];
       svg.appendChild(td);
     }
 
+    /* --- cruz + leitura do candle --- */
+    var cruz = svgEl("g", { visibility: "hidden", "pointer-events": "none" });
+    var faixa = svgEl("rect", { y: PADT, height: HP + GAP + HA, fill: "var(--acento)", opacity: .09, rx: 2 });
+    var vlin = svgEl("line", { y1: PADT, y2: AT + HA, stroke: "var(--tinta2)", "stroke-width": 1, "stroke-dasharray": "3 3", opacity: .7 });
+    var hlin = svgEl("line", { x1: PADL, x2: PADL + LW, stroke: "var(--tinta2)", "stroke-width": 1, "stroke-dasharray": "3 3", opacity: .7 });
+    var tagBg = svgEl("rect", { width: 62, height: 17, rx: 4, fill: "var(--tinta2)" });
+    var tagTx = svgEl("text", { fill: "var(--plano)", "font-size": 10.5, "font-family": "var(--mono)", "text-anchor": "middle" });
+    cruz.appendChild(faixa); cruz.appendChild(vlin); cruz.appendChild(hlin);
+    cruz.appendChild(tagBg); cruz.appendChild(tagTx);
+    svg.appendChild(cruz);
+
+    var dica = el("div", "dica"); dica.hidden = true;
+
+    function coord(ev) {
+      var r = svg.getBoundingClientRect();
+      return { esc: W / r.width, x: (ev.clientX - r.left) * (W / r.width),
+        y: (ev.clientY - r.top) * (W / r.width), rx: ev.clientX - r.left, rw: r.width };
+    }
+    function idxDe(p) {
+      return Math.max(i0, Math.min(i1, i0 + Math.floor((p.x - PADL) / passo)));
+    }
+
+    svg.addEventListener("pointermove", function (ev) {
+      if (arrasto) { cruz.setAttribute("visibility", "hidden"); dica.hidden = true; return; }
+      var p = coord(ev);
+      if (p.x < PADL || p.x > PADL + LW || p.y < PADT || p.y > AT + HA) {
+        cruz.setAttribute("visibility", "hidden"); dica.hidden = true; return;
+      }
+      var i3 = idxDe(p), cd = C[i3], x = X(i3);
+      cruz.setAttribute("visibility", "visible");
+      faixa.setAttribute("x", (x - passo / 2).toFixed(1));
+      faixa.setAttribute("width", passo.toFixed(1));
+      vlin.setAttribute("x1", x.toFixed(1)); vlin.setAttribute("x2", x.toFixed(1));
+      var noPreco = p.y <= PADT + HP;
+      hlin.setAttribute("y1", p.y.toFixed(1)); hlin.setAttribute("y2", p.y.toFixed(1));
+      hlin.setAttribute("visibility", noPreco ? "visible" : "hidden");
+      tagBg.setAttribute("visibility", noPreco ? "visible" : "hidden");
+      tagTx.setAttribute("visibility", noPreco ? "visible" : "hidden");
+      if (noPreco) {
+        var pv2 = lo + (PADT + HP - p.y) / HP * (hi - lo);
+        tagBg.setAttribute("x", PADL + LW + 4); tagBg.setAttribute("y", p.y - 8.5);
+        tagTx.setAttribute("x", PADL + LW + 35); tagTx.setAttribute("y", p.y + 3.5);
+        tagTx.textContent = fmt(pv2, a.casas);
+      }
+      dica.hidden = false;
+      dica.innerHTML =
+        "<b>" + esc(cd[0]) + "</b>" +
+        "<span><i>abre</i>" + fmt(cd[1], a.casas) + "</span>" +
+        "<span><i>máx</i>" + fmt(cd[2], a.casas) + "</span>" +
+        "<span><i>mín</i>" + fmt(cd[3], a.casas) + "</span>" +
+        "<span><i>fecha</i>" + fmt(cd[4], a.casas) + "</span>" +
+        "<span class='m8'><i>MM8</i>" + fmt(g.mm8[i3], a.casas) + "</span>" +
+        "<span class='m20'><i>MM20</i>" + fmt(g.mm20[i3], a.casas) + "</span>" +
+        "<span class='adx'><i>ADX</i>" + fmt(g.adx[i3], 1) + "</span>";
+      var larguraDica = 168;
+      var esq = p.rx + 18;
+      if (esq + larguraDica > p.rw - 6) esq = p.rx - larguraDica - 18;
+      dica.style.left = Math.max(4, esq) + "px";
+      dica.style.top = Math.max(4, (p.y / p.esc) - 10) + "px";
+    });
+    svg.addEventListener("pointerleave", function () {
+      cruz.setAttribute("visibility", "hidden"); dica.hidden = true;
+    });
+
+    /* --- zoom pela roda --- */
+    svg.addEventListener("wheel", function (ev) {
+      ev.preventDefault();
+      var p = coord(ev);
+      zoom(ev.deltaY > 0 ? 1.2 : 1 / 1.2, idxDe(p));
+    }, { passive: false });
+
+    /* --- arrasto --- */
+    svg.addEventListener("pointerdown", function (ev) {
+      if (ev.button) return;
+      ev.preventDefault();
+      var r = svg.getBoundingClientRect();
+      arrasto = { x: ev.clientX, i0: i0, i1: i1, n: n, passo: passo, esc: W / r.width };
+      document.body.classList.add("arrastando");
+      cruz.setAttribute("visibility", "hidden"); dica.hidden = true;
+    });
+    svg.addEventListener("dblclick", function () { janela(n, true); desenhar(); });
+
+    /* --- teclado --- */
+    svg.addEventListener("keydown", function (ev) {
+      var passoTecla = Math.max(1, Math.round((i1 - i0 + 1) * 0.2));
+      if (ev.key === "ArrowLeft") { pan(-passoTecla); ev.preventDefault(); }
+      else if (ev.key === "ArrowRight") { pan(passoTecla); ev.preventDefault(); }
+      else if (ev.key === "+" || ev.key === "=") { zoom(1 / 1.3); ev.preventDefault(); }
+      else if (ev.key === "-" || ev.key === "_") { zoom(1.3); ev.preventDefault(); }
+      else if (ev.key === "Home" || ev.key === "0") { janela(n, true); desenhar(); ev.preventDefault(); }
+    });
+
     box.appendChild(svg);
+    box.appendChild(dica);
+  }
+
+  /* --- controles do gráfico --- */
+
+  function controles() {
+    var box = $("#grafico-ctrl"); if (!box) return;
+    box.innerHTML = "";
+    var S = serie(); if (!S) return;
+    var n = S.g.candles.length, m = vis ? vis.i1 - vis.i0 + 1 : n;
+
+    function bt(txt, rot, fn, desab) {
+      var b = el("button", "ctrl-bt", txt); b.type = "button";
+      b.setAttribute("aria-label", rot); b.title = rot;
+      if (desab) b.disabled = true;
+      b.addEventListener("click", fn);
+      return b;
+    }
+    box.appendChild(bt("−", "Afastar", function () { zoom(1.35); }, m >= n));
+    box.appendChild(bt("+", "Aproximar", function () { zoom(1 / 1.35); }, m <= MINJAN));
+    box.appendChild(bt("‹", "Voltar no tempo", function () { pan(-Math.max(1, Math.round(m * 0.25))); }, !vis || vis.i0 === 0));
+    box.appendChild(bt("›", "Avançar no tempo", function () { pan(Math.max(1, Math.round(m * 0.25))); }, !vis || vis.i1 === n - 1));
+    box.appendChild(bt("Tudo", "Ver a série inteira", function () { janela(n, true); desenhar(); }, m >= n));
+    box.appendChild(el("span", "ctrl-cont", m + " de " + n + " candles"));
   }
 
   function extras() {
@@ -359,7 +634,7 @@
     });
   }
 
-  function desenhar() { grafico(); extras(); }
+  function desenhar() { grafico(); controles(); extras(); }
 
   /* ---------- 4. balões ---------- */
 
@@ -456,7 +731,6 @@
       wa.appendChild(b);
     });
     var a0 = D.ativos.filter(function (x) { return x.id === ativoSel; })[0];
-    if (a0 && !a0.grafico[tfSel]) tfSel = "diario";
     var wt = $("#abas-tf"); wt.innerHTML = "";
     [["min60", "60 minutos"], ["diario", "Diário"]].forEach(function (t) {
       if (!a0 || !a0.grafico[t[0]]) return;
@@ -465,6 +739,7 @@
       b.addEventListener("click", function () { tfSel = t[0]; abas(); desenhar(); });
       wt.appendChild(b);
     });
+    if (a0 && !a0.grafico[tfSel]) { tfSel = "diario"; }
   }
 
   /* ---------- início ---------- */
