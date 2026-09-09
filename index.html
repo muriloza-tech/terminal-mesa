@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Terminal Mesa</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="dot" aria-hidden="true"></span>
+    <h1>Terminal Mesa</h1>
+    <span class="sub">assessor da sessão seguinte</span>
+  </div>
+  <div class="topbar-actions">
+    <span id="clock" class="clock" aria-live="off"></span>
+    <button id="btn-refresh" class="btn" type="button" title="Atualizar preços agora">Atualizar</button>
+    <button id="btn-settings" class="btn" type="button" aria-expanded="false" aria-controls="settings">Ajustes</button>
+    <button id="btn-theme" class="btn icon" type="button" title="Alternar tema" aria-label="Alternar tema">◐</button>
+  </div>
+</header>
+
+<section id="settings" class="settings" hidden>
+  <div class="settings-grid">
+    <label class="field">
+      <span>Token brapi.dev <a href="https://brapi.dev/dashboard" target="_blank" rel="noopener">(pegar grátis)</a></span>
+      <input id="in-token" type="password" placeholder="cole o token aqui" autocomplete="off" spellcheck="false">
+      <small>Necessário para ações B3 e Ibovespa. Fica só no seu navegador.</small>
+    </label>
+    <label class="field">
+      <span>Atualização automática</span>
+      <select id="in-interval">
+        <option value="0">desligada</option>
+        <option value="30">30 segundos</option>
+        <option value="60" selected>1 minuto</option>
+        <option value="300">5 minutos</option>
+      </select>
+      <small>Só roda com esta aba aberta.</small>
+    </label>
+    <label class="field">
+      <span>WIN — referência manual</span>
+      <input id="in-win" type="text" inputmode="decimal" placeholder="ex.: 186.400" autocomplete="off">
+      <small>Cotação de futuro não tem fonte pública gratuita. Digite e fica salvo aqui.</small>
+    </label>
+    <label class="field">
+      <span>WDO — referência manual</span>
+      <input id="in-wdo" type="text" inputmode="decimal" placeholder="ex.: 5.412,5" autocomplete="off">
+      <small>Mesma coisa do WIN.</small>
+    </label>
+  </div>
+  <p class="settings-note">Nada aqui é enviado para lugar nenhum. Fica no <code>localStorage</code> deste navegador.</p>
+</section>
+
+<nav class="tabs" role="tablist">
+  <button class="tab" role="tab" data-tab="folha" aria-selected="true">Folha</button>
+  <button class="tab" role="tab" data-tab="precos" aria-selected="false">Preços</button>
+  <button class="tab" role="tab" data-tab="agenda" aria-selected="false">Agenda e alertas</button>
+  <button class="tab" role="tab" data-tab="historico" aria-selected="false">Histórico</button>
+</nav>
+
+<main>
+
+  <section id="panel-folha" class="panel" role="tabpanel">
+    <div class="panel-head">
+      <h2>Folha da sessão seguinte</h2>
+      <span id="folha-meta" class="meta"></span>
+    </div>
+    <article id="folha-body" class="prose">
+      <p class="loading">Carregando folha…</p>
+    </article>
+  </section>
+
+  <section id="panel-precos" class="panel" role="tabpanel" hidden>
+    <div class="panel-head">
+      <h2>Preços</h2>
+      <span id="precos-meta" class="meta"></span>
+    </div>
+    <p class="disclaimer">Cada cartão mostra a fonte e a hora do dado. Cartão sem fonte fica cinza e não recebe número inventado.</p>
+    <div id="grid-precos"></div>
+  </section>
+
+  <section id="panel-agenda" class="panel" role="tabpanel" hidden>
+    <div class="panel-head"><h2>Agenda e alertas</h2></div>
+    <h3 class="sub-head">Alertas abertos</h3>
+    <div id="alertas"></div>
+    <h3 class="sub-head">Calendário</h3>
+    <div id="agenda"></div>
+  </section>
+
+  <section id="panel-historico" class="panel" role="tabpanel" hidden>
+    <div class="panel-head"><h2>Histórico de folhas</h2></div>
+    <p class="disclaimer">Para conferir o que a leitura de ontem acertou e o que errou.</p>
+    <div id="historico"></div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <p>Material de estudo pessoal. Não é recomendação de investimento. Mercado futuro envolve perda de capital.</p>
+</footer>
+
+<script src="assets/app.js"></script>
+</body>
+</html>
