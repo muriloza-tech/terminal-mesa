@@ -28,8 +28,10 @@
   <div class="guia-in">
     <h2>Como ler esta página em 30 segundos</h2>
     <ol class="guia-passos">
-      <li><b>Comece pelo veredito.</b> Três cartões no topo. Se diz FORA, acabou — não tem trade. Se diz COMPRA ou VENDA, os dois números embaixo são o gatilho e a invalidação.</li>
-      <li><b>Confira a hierarquia.</b> A grade mostra os 8 níveis do método em três timeframes. Verde é compra, vermelho é venda, cinza é neutro. Os dois primeiros níveis mandam nos outros seis. Embaixo da grade tem a legenda explicando cada linha.</li>
+      <li><b>Comece pelo Ibovespa.</b> Ele é o primeiro cartão e é quem manda. A direção se lê no índice à vista; o WIN é só o instrumento. Depois vêm WIN e WDO: se diz FORA, acabou — não tem trade.</li>
+      <li><b>Leia o plano.</b> É a faixa destacada logo abaixo, em quatro passos: o que esperar, quando entrar, quando sair e onde realizar. Cada passo tem um "por que esse número" que você abre se quiser a conta. Se você só quer executar, o plano basta.</li>
+      <li><b>Veja quem está no comando.</b> Player curto (5 e 15 min) contra player longo (60 min, diário, semanal). Lados opostos é rotação; mesmo lado é tendência — e risco de entrar esticado.</li>
+      <li><b>Confira a hierarquia.</b> A grade mostra os 8 níveis do método nos cinco timeframes. Verde é compra, vermelho é venda, cinza é neutro. Os dois primeiros níveis mandam nos outros seis. Embaixo da grade tem a legenda explicando cada linha.</li>
       <li><b>Olhe o gráfico só depois.</b> Ele confirma o que a grade já disse. As linhas tracejadas são os Fibos. O gráfico é vivo: role para aproximar, arraste para andar, passe o mouse para ler o candle.</li>
       <li><b>Os balões são o porquê.</b> Tamanho é peso, seta é direção.</li>
     </ol>
@@ -46,10 +48,25 @@
     </div>
     <div id="decisao" class="cartoes"></div>
   </section>
+  <section class="faixa destaque">
+    <div class="rotulo-secao">
+      <h2>O plano, passo a passo</h2>
+      <p>O que fazer no próximo pregão, em ordem e sem jargão. Cada passo traz embaixo o motivo técnico — abra se quiser conferir a conta, ignore se só quiser executar.</p>
+    </div>
+    <div id="plano" class="planos"></div>
+    <div id="glossario"></div>
+  </section>
+  <section class="faixa">
+    <div class="rotulo-secao">
+      <h2>Quem está no comando</h2>
+      <p>Sempre tem pelo menos dois players no mesmo gráfico. O curto opera 5 e 15 minutos; o longo carrega 60 minutos, diário e semanal. Quando estão em lados opostos, é rotação — não reversão. O dia em que viram juntos é o dia que muda a leitura.</p>
+    </div>
+    <div id="players" class="players"></div>
+  </section>
   <section class="faixa">
     <div class="rotulo-secao">
       <h2>Hierarquia</h2>
-      <p>Os oito níveis do operacional, nos três timeframes. Os níveis 1 e 2 mandam nos outros seis — se eles estão contra, indicador alinhado não autoriza entrada.</p>
+      <p>Os oito níveis do operacional, nos cinco timeframes, separados por player. Os níveis 1 e 2 mandam nos outros seis — se eles estão contra, indicador alinhado não autoriza entrada. E acima de tudo está o Ibovespa: a direção se lê no índice, o WIN é só o instrumento.</p>
     </div>
     <div id="abas-ativo" class="abas" role="tablist"></div>
     <div id="hierarquia" class="grade-wrap"></div>
@@ -58,7 +75,7 @@
   <section class="faixa">
     <div class="rotulo-secao">
       <h2>Gráfico</h2>
-      <p>Candles com média 8 e média 20 — o par do Duplo Rompimento — e os níveis de Fibonacci da pernada. Embaixo, o ADX com as linhas de 20 e 32. Role para aproximar, arraste para andar no tempo, dois cliques para voltar ao tudo.</p>
+      <p>Candles com média 8 e média 20 — o par do Duplo Rompimento — e os níveis de Fibonacci da pernada. Embaixo, o ADX com as linhas de 20 e 32. Role para aproximar, arraste para andar no tempo e arraste na faixa dos preços, à direita, para esticar ou achatar a escala. Dois cliques voltam ao normal.</p>
     </div>
     <div class="grafico-barra">
       <div id="abas-tf" class="abas peq" role="tablist"></div>
