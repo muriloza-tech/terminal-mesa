@@ -2,8 +2,13 @@
   "_leia": "Índice das folhas. A primeira por data (mais recente) é a que abre na aba Folha.",
   "folhas": [
     {
+      "data": "2026-09-14",
+      "titulo": "Ibovespa, WIN e WDO — folha do pregão de 14/09",
+      "arquivo": "2026-09-14.md"
+    },
+    {
       "data": "2026-09-10",
-      "titulo": "WIN e WDO — folha do pregão de 10/09",
+      "titulo": "Ibovespa, WIN e WDO — folha do pregão de 10/09",
       "arquivo": "2026-09-10.md"
     },
     {
